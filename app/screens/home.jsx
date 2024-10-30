@@ -1,17 +1,40 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ImageBackground, Keyboard, TextInput } from "react-native";
-import React, { useState } from "react";
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ImageBackground, Keyboard, TextInput, KeyboardAvoidingView, Platform, RefreshControl } from "react-native";
+import React, { useState, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons as MIcon } from '@expo/vector-icons';
 import { useMyTheme } from "@/hooks/useMyTheme";
-import bike1 from '@/assets/images/MB-White.png';
+import axios from "axios";
+import useConnection from "@/hooks/useConnection";
+import { toast } from 'sonner-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import GDim from "@/hooks/useDimension";
+const getLoginStatus = async () => {
+  try {
+    const value = await AsyncStorage.getItem('isLoggedIn'); // Replace 'isLoggedIn' with your key
+    if (value !== null) {
+      // Value exists, convert it to boolean if needed
+      return value === 'true'; // Assuming the value is stored as a string
+    }
+    return false; // Default to false if no value found
+  } catch (error) {
+    console.error('Error retrieving login status:', error);
+    return false; // Handle error and return default value
+  }
+};
+
+const checkLoginStatus = async () => {
+  const isLoggedIn = await getLoginStatus();
+  console.log('Is user logged in?', isLoggedIn);
+  return isLoggedIn;
+};
 
 //Components
 
 const Card = ({ title, description, onPress, imageSource }) => {
+  
   return (
     <TouchableOpacity onPress={onPress} style={styles.card}>
       <ImageBackground source={imageSource} style={styles.imageBackground} imageStyle={styles.image}>
@@ -29,6 +52,15 @@ export default function Home() {
   const navigation = useNavigation();
   const myTheme = useMyTheme();
   const [searchQuery, setSearchQuery] = useState("");
+  const { connectionStatus, serverStatus, isConnected } = useConnection();
+
+  //Bikes
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState();
+
 
   const clearSearch = () => {
     setSearchQuery(''); // Clear the search input
@@ -38,6 +70,65 @@ export default function Home() {
     // Implement your search logic here
     console.log("Searching for:", searchQuery);
   };
+
+
+
+  const fetchRecords = async () => {
+    try {
+      const response = await axios.get('https://rbms-backend-g216.onrender.com/rbmsa/topBikes'); // Adjust the URL based on your backend
+      setRecords(response.data);
+      setLoading(false);
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchRecords(); // Fetch records again
+    setRefreshing(false); // Set refreshing to false after fetching
+  };
+  
+
+  useEffect(() => {
+    
+    if (isConnected) {
+      toast.success('Connected to server', {
+        position: 'bottom-center',
+        duration: 2000,
+      })
+    }
+
+    fetchRecords();
+    const intervalId = setInterval(() => {
+      fetchRecords(); // Fetch data every 5 seconds
+    }, 5000); // 5000 milliseconds = 5 seconds
+
+    return () => clearInterval(intervalId);
+  }, [isConnected])
+
+
+  const handleCardPress = (bike) => {
+    // This function will be executed if the user is logged in
+    navigation.navigate('Preview', {
+      imageSource: bike.bike_image_url,
+      bikeName: bike.bike_name,
+      bikeDesc: bike.bike_desc,
+      bikePrice: bike.bike_rent_price,
+      bikeId: bike.bike_id,
+      id: bike._id,
+    });
+  };
+
+  const handleNavPress = (destination) => {
+    if (!isLoggedIn) {
+      navigation.navigate('Account'); // Redirect to Account tab if not logged in
+    } else {
+      navigation.navigate(destination); // Navigate to the desired screen if logged in
+    }
+  };
+
   return (
     <LinearGradient
       // Colors for the gradient
@@ -57,21 +148,21 @@ export default function Home() {
         ]}
       >
         <View >
-        <View style={styles.sbcontainer}>
-      <View style={styles.searchContainer}>
-        <MIcon name="search" size={28} color="gray" style={styles.icon} />
-        <TextInput
-          style={styles.searchBar}
-          placeholder="Search..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={handleSearch}
-        />
-        {searchQuery.length > 0 && ( // Show clear button only if there is text in the input
-            <MIcon name="clear" size={28} color="gray" style={styles.clearIcon} onPress={clearSearch} />
-          )}
-      </View>
-      {/* <FlatList
+          <View style={styles.sbcontainer}>
+            <View style={styles.searchContainer}>
+              <MIcon name="search" size={28} color="gray" style={styles.icon} />
+              <TextInput
+                style={styles.searchBar}
+                placeholder="Search..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={handleSearch}
+              />
+              {searchQuery.length > 0 && ( // Show clear button only if there is text in the input
+                <MIcon name="clear" size={28} color="gray" style={styles.clearIcon} onPress={clearSearch} />
+              )}
+            </View>
+            {/* <FlatList
           data={filteredData}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
@@ -80,87 +171,42 @@ export default function Home() {
             </View>
           )}
         /> */}
-    </View>
+          </View>
           <View style={styles.homeNav}>
-            <TouchableOpacity onPress={() => navigation.navigate('Rent')} style={styles.button}>
+            <TouchableOpacity onPress={() => navigation.navigate('Bikes')} style={styles.button}>
               <MIcon name="pedal-bike" size={GDim.scale * 18} color={myTheme.primary} />
-              <Text style={styles.buttonText}>Rent</Text>
+              <Text style={styles.buttonText}>Bikes</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('Lock')} style={styles.button}>
               <MIcon name="lock-outline" size={GDim.scale * 18} color={myTheme.primary} />
               <Text style={styles.buttonText}>Smart Lock</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Availability')} style={styles.button}>
+            {/* <TouchableOpacity onPress={() => navigation.navigate('Availability')} style={styles.button}>
               <MIcon name="checklist" size={GDim.scale * 18} color={myTheme.primary} />
               <Text style={styles.buttonText}>Availability</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             <TouchableOpacity onPress={() => navigation.navigate('TTrack')} style={styles.button}>
               <MIcon name="timer" size={GDim.scale * 18} color={myTheme.primary} />
               <Text style={styles.buttonText}>Time Tracker</Text>
             </TouchableOpacity>
           </View>
         </View>
+        
         <View>
-          <View style={{marginTop:GDim.height*0.05, marginLeft:GDim.width*0.05}}>
-            <Text style={{fontSize: GDim.scale * 12, fontWeight: 'bold'}}>Offers for you</Text>
+          <View style={{ marginTop: GDim.height * 0.04, marginLeft: GDim.width * 0.05 }}>
+            <Text style={{ fontSize: GDim.scale * 10, fontWeight: 'bold' }}>New Bikes</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ofy}>
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-          </ScrollView>
-        </View>
-        <View>
-          <View style={{marginTop:GDim.height*0.03, marginLeft:GDim.width*0.05}}>
-            <Text style={{fontSize: GDim.scale * 12, fontWeight: 'bold'}}>All Bikes</Text>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ofy}>
-
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
-            <Card
-              title="Card Title 1"
-              description="This is a description for card 1."
-              onPress={() => console.log('Card 1 pressed!')}
-              imageSource={bike1} // Replace with your image path
-            />
+          <ScrollView showsVerticalScrollIndicator={true} style={styles.SView} contentContainerStyle={styles.scrollViewCon}>
+            {
+              records.map((bike, index) => (
+                <Card key={index}
+                  title={bike.bike_name}
+                  description="see details"
+                  onPress={() => handleCardPress(bike)}
+                  imageSource={{ uri: bike.bike_image_url }} // Replace with your image path
+                />
+              ))
+            }
           </ScrollView>
         </View>
       </View>
@@ -170,15 +216,14 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-
+    flex: 1
   },
   homeNav: {
     marginTop: GDim.height * 0.09,
     width: GDim.width * 0.85,
     height: GDim.height * 0.11,
     backgroundColor: "#D6D6CA",
-    borderRadius: GDim.scale * 2,
+    borderRadius: GDim.scale * 5,
     elevation: 10,
     display: 'flex',
     flexDirection: 'row',
@@ -193,13 +238,18 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   buttonText: {
-    fontSize: GDim.scale * 6,
+    fontSize: GDim.scale * 5,
 
   },
-  ofy: {
+  SView: {
+    height: GDim.height * 0.55,
+    width: GDim.width,
+    maxHeight: GDim.height * 0.55,
+  },
+  scrollViewCon: {
     display: 'flex',
-    marginTop: GDim.height * 0.01,
-
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   card: {
     borderRadius: 8,
@@ -207,8 +257,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden', // Ensures the border radius is applied
   },
   imageBackground: {
-    width: GDim.width * 0.5,
-    height: GDim.height * 0.15, // Set the height of the card
+    width: GDim.width * 0.5 - 25,
+    height: GDim.height * 0.15 - 25, // Set the height of the card
     justifyContent: 'flex-end', // Align content at the bottom
   },
   image: {
@@ -216,15 +266,15 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent background for text
-    padding: GDim.scale * 2,
+    padding: GDim.scale * 1,
   },
   title: {
-    fontSize: GDim.scale * 7,
+    fontSize: GDim.scale * 5,
     fontWeight: 'bold',
     color: '#fff', // Text color
   },
   description: {
-    fontSize: GDim.scale * 5,
+    fontSize: GDim.scale * 4,
     color: '#fff', // Text color
   },
   sbcontainer: {

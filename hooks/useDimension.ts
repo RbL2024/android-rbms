@@ -1,6 +1,6 @@
 import { Dimensions } from "react-native";
 
-let { width, height, scale } = Dimensions.get("screen");
+let { width, height, scale } = Dimensions.get("window");
 
 const GDim = {
   get width() {
@@ -17,7 +17,7 @@ const GDim = {
       width: newWidth,
       height: newHeight,
       scale: newScale,
-    } = Dimensions.get("screen");
+    } = Dimensions.get("window");
 
     width = newWidth;
     height = newHeight;
